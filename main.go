@@ -399,6 +399,7 @@ func selectQueryManual(db *sql.DB) {
 }
 
 // INSERT INTO city (Name, CountryCode, District, Population) VALUES ('NewCity', 'USA', 'TestState', 12345);
+
 func insertQueryManual(db *sql.DB) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter INSERT query: ")
