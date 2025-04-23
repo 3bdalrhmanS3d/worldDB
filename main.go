@@ -14,16 +14,21 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+var currentDatabase string
+
 func clearScreen() {
 	var cmd *exec.Cmd
+	var err error
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd", "/c", "cls")
 	} else {
 		cmd = exec.Command("clear")
 	}
 	cmd.Stdout = os.Stdout
-	err := cmd.Run()
+	err = cmd.Run()
+
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 }
@@ -42,54 +47,19 @@ func dbConnectInteractive() *sql.DB {
 	password = strings.TrimSpace(password)
 
 	//Initial connection without specifying a database
-	db, err := sql.Open(driver, user+":"+password+"@/")
+	db, err := sql.Open(driver, fmt.Sprintf("%s:%s@/", user, password))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Connection failed:", err)
 	}
+
 	err = db.Ping()
 	if err != nil {
 		log.Fatal("Failed to connect to DB server:", err)
 	}
 
-	//Fetching Databases
-	rows, err := db.Query("SHOW DATABASES")
-	if err != nil {
-		log.Fatal("Cannot list databases:", err)
-	}
-	defer rows.Close()
+	fmt.Println("\nConnected to DB server successfully.")
 
-	var databases []string
-	var dbName string
-	i := 1
-	fmt.Println("\nAvailable Databases:")
-	for rows.Next() {
-		rows.Scan(&dbName)
-		fmt.Printf("%d. %s\n", i, dbName)
-		databases = append(databases, dbName)
-		i++
-	}
-
-	fmt.Print("\nEnter the number of the database you want to use: ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-	index, err := strconv.Atoi(input)
-	if err != nil || index < 1 || index > len(databases) {
-		log.Fatal("Invalid database selection.")
-	}
-	selectedDB := databases[index-1]
-
-	//Reconnect to the selected database
-	finalDB, err := sql.Open(driver, user+":"+password+"@/"+selectedDB)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = finalDB.Ping()
-	if err != nil {
-		log.Fatal("Failed to connect to selected DB:", err)
-	}
-
-	fmt.Printf("\nConnected to database: %s\n", selectedDB)
-	return finalDB
+	return db
 }
 
 //func readCities(db *sql.DB) {
@@ -131,23 +101,128 @@ func dbConnectInteractive() *sql.DB {
 //	}
 //}
 
-//	func readLanguages(db *sql.DB) {
-//		fmt.Println("\n===== Languages =====")
-//		rows, err := db.Query("SELECT CountryCode, Language, IsOfficial FROM countrylanguage")
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		defer rows.Close()
-//
-//		for rows.Next() {
-//			var code, language, official string
-//			err := rows.Scan(&code, &language, &official)
-//			if err != nil {
-//				log.Fatal(err)
-//			}
-//			fmt.Printf("%s | %-20s | Official: %s\n", code, language, official)
-//		}
-//	}
+func createDatabase(db *sql.DB) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the name of the database to create: ")
+	name, _ := reader.ReadString('\n')
+	name = strings.TrimSpace(name)
+
+	query := fmt.Sprintf("CREATE DATABASE %s", name)
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	fmt.Printf("Created database %s\n", name)
+}
+func dropDatabase(db *sql.DB) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the name of the database to drop: ")
+	name, _ := reader.ReadString('\n')
+	name = strings.TrimSpace(name)
+
+	query := fmt.Sprintf("Drop DATABASE %s", name)
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	fmt.Printf("Dropped database %s\n", name)
+}
+func createTable(db *sql.DB) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("Enter the name of the table to create: ")
+	tableName, _ := reader.ReadString('\n')
+	tableName = strings.TrimSpace(tableName)
+
+	columns := getColumns()
+	if columns == "" {
+		fmt.Println("Failed to create table due to invalid columns.")
+		return
+	}
+
+	// CREATE TABLE
+	query := fmt.Sprintf("CREATE TABLE %s (%s)", tableName, columns)
+	_, err := db.Exec(query)
+	if err != nil {
+		fmt.Println("Error creating table:", err)
+		return
+	}
+
+	fmt.Printf("Table '%s' created successfully.\n", tableName)
+}
+func dropTable(db *sql.DB) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the name of the table to drop: ")
+	tableName, _ := reader.ReadString('\n')
+	tableName = strings.TrimSpace(tableName)
+
+	query := fmt.Sprintf("DROP TABLE %s", tableName)
+	_, err := db.Exec(query)
+	if err != nil {
+		fmt.Println("Error dropping table:", err)
+		return
+	}
+
+	fmt.Printf("Table '%s' dropped successfully.\n", tableName)
+}
+func useDatabase(db *sql.DB) {
+
+	databases, err := showDatabases(db)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("\nEnter the number of the database you want to use: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	index, err := strconv.Atoi(input)
+	if err != nil || index < 1 || index > len(databases) {
+		fmt.Println("Invalid selection. Please choose a valid number.")
+		return
+	}
+
+	selectedDB := databases[index-1]
+
+	_, err = db.Exec("USE " + selectedDB)
+	if err != nil {
+		fmt.Printf("Error selecting database '%s': %v\n", selectedDB, err)
+		return
+	}
+
+	currentDatabase = selectedDB
+	fmt.Printf("Now using database: %s\n", selectedDB)
+}
+func getColumns() string {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("Enter the number of columns: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	numColumns, err := strconv.Atoi(input)
+	if err != nil || numColumns <= 0 {
+		fmt.Println("Invalid number of columns")
+		return ""
+	}
+
+	var columns []string
+	for i := 1; i <= numColumns; i++ {
+		fmt.Printf("Enter column %d name: ", i)
+		columnName, _ := reader.ReadString('\n')
+		columnName = strings.TrimSpace(columnName)
+
+		fmt.Printf("Enter type for column %d (e.g., INT, VARCHAR(50)): ", i)
+		columnType, _ := reader.ReadString('\n')
+		columnType = strings.TrimSpace(columnType)
+
+		columnDefinition := fmt.Sprintf("%s %s", columnName, columnType)
+		columns = append(columns, columnDefinition)
+	}
+
+	return strings.Join(columns, ", ")
+}
 func listTables(db *sql.DB) []string {
 	fmt.Println("Available tables:")
 	rows, err := db.Query("SHOW TABLES")
@@ -277,6 +352,19 @@ func deleteRowInteractive(db *sql.DB) {
 	idValue, _ := reader.ReadString('\n')
 	idValue = strings.TrimSpace(idValue)
 
+	var count int
+	queryCheck := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = ?", table, idColumn)
+	err := db.QueryRow(queryCheck, idValue).Scan(&count)
+	if err != nil {
+		fmt.Println("Error checking row existence:", err)
+		return
+	}
+
+	if count == 0 {
+		fmt.Println("No matching row found to delete.")
+		return
+	}
+
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s = ?", table, idColumn)
 	result, err := db.Exec(query, idValue)
 	if err != nil {
@@ -331,6 +419,29 @@ func insertQueryManual(db *sql.DB) {
 
 	fmt.Printf("Insert successful. Rows affected: %d\n", rowsAffected)
 }
+func showDatabases(db *sql.DB) ([]string, error) {
+	rows, err := db.Query("SHOW DATABASES")
+	if err != nil {
+		return nil, fmt.Errorf("cannot list databases: %v", err)
+	}
+	defer rows.Close()
+
+	var databases []string
+	var dbName string
+	i := 1
+	fmt.Println("\nAvailable Databases:")
+	for rows.Next() {
+		err = rows.Scan(&dbName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%d. %s\n", i, dbName)
+		databases = append(databases, dbName)
+		i++
+	}
+
+	return databases, nil
+}
 
 func main() {
 	db := dbConnectInteractive()
@@ -341,21 +452,33 @@ func main() {
 	for {
 		clearScreen()
 		fmt.Println("\n===== MENU =====")
-		fmt.Println("1. Show Tables")
-		fmt.Println("2. Show Table by Number")
-		fmt.Println("3. Update Row")
-		fmt.Println("4. Delete Row")
-		fmt.Println("5. Run SELECT Query")
-		fmt.Println("6. Run INSERT Query")
-		fmt.Println("0. Exit")
-		fmt.Print("Enter your choice: ")
 
+		if currentDatabase == "" {
+			fmt.Println("1. Create Database")
+			fmt.Println("2. Delete Database")
+			fmt.Println("3. Show Databases")
+			fmt.Println("4. Use Database")
+		} else {
+			fmt.Printf("Current Database: %s\n", currentDatabase)
+			fmt.Println("1. Show Tables")
+			fmt.Println("2. Select Table")
+			fmt.Println("3. Create Table")
+			fmt.Println("4. Drop Table")
+			fmt.Println("5. Update Row")
+			fmt.Println("6. Delete Row")
+			fmt.Println("7. Run SELECT Query")
+			fmt.Println("8. Run INSERT Query")
+			fmt.Println("9. Change Database")
+		}
+		fmt.Println("0. Exit")
+
+		fmt.Print("\nEnter your choice: ")
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
 		choice, err := strconv.Atoi(input)
 		if err != nil {
-			fmt.Println("Invalid choice, please try again")
+			fmt.Println("Invalid choice, please try again.")
 			continue
 		}
 
@@ -363,47 +486,70 @@ func main() {
 		case 0:
 			fmt.Println("Exiting...")
 			return
-		case 1:
-			listTables(db)
-			fmt.Println("Press ENTER to return...")
-			reader.ReadString('\n')
-		case 2:
-			tables := listTables(db)
-			if len(tables) == 0 {
-				fmt.Println("No tables found.")
-				break
-			}
-			fmt.Print("Enter table number: ")
-			input, _ := reader.ReadString('\n')
-			input = strings.TrimSpace(input)
-			index, err := strconv.Atoi(input)
-			if err != nil || index < 1 || index > len(tables) {
-				fmt.Println("Invalid table number.")
-				break
-			}
-			tableName := tables[index-1]
-			readTableByName(db, tableName)
-			fmt.Println("\nPress ENTER to return to menu...")
-			reader.ReadString('\n')
-		case 3:
-			updateRowInteractive(db)
-			fmt.Println("\nPress ENTER to return to menu...")
-			reader.ReadString('\n')
-		case 4:
-			deleteRowInteractive(db)
-			fmt.Println("\nPress ENTER to return to menu...")
-			reader.ReadString('\n')
-		case 5:
-			selectQueryManual(db)
-			fmt.Println("\nPress ENTER to return to menu...")
-			reader.ReadString('\n')
-		case 6:
-			insertQueryManual(db)
-			fmt.Println("\nPress ENTER to return to menu...")
-			reader.ReadString('\n')
-		default:
-			fmt.Println("Invalid choice. Try again.")
-		}
-	}
 
+		case 1:
+			if currentDatabase == "" {
+				createDatabase(db)
+			} else {
+				listTables(db)
+			}
+		case 2:
+			if currentDatabase == "" {
+				dropDatabase(db)
+			} else {
+				fmt.Print("Enter table name: ")
+				tableName, _ := reader.ReadString('\n')
+				tableName = strings.TrimSpace(tableName)
+				readTableByName(db, tableName)
+			}
+		case 3:
+			if currentDatabase == "" {
+				showDatabases(db)
+			} else {
+				createTable(db)
+			}
+		case 4:
+			if currentDatabase == "" {
+				useDatabase(db)
+			} else {
+				dropTable(db)
+			}
+		case 5:
+			if currentDatabase == "" {
+				fmt.Println("Please select a database first.")
+			} else {
+				updateRowInteractive(db)
+			}
+		case 6:
+			if currentDatabase == "" {
+				fmt.Println("Please select a database first.")
+			} else {
+				deleteRowInteractive(db)
+			}
+		case 7:
+			if currentDatabase == "" {
+				fmt.Println("Please select a database first.")
+			} else {
+				selectQueryManual(db)
+			}
+		case 8:
+			if currentDatabase == "" {
+				fmt.Println("Please select a database first.")
+			} else {
+				insertQueryManual(db)
+			}
+		case 9:
+			if currentDatabase == "" {
+				fmt.Println("Invalid choice, please try again.")
+			} else {
+				useDatabase(db)
+			}
+		default:
+			fmt.Println("Invalid choice, please try again.")
+		}
+
+		fmt.Println("\nPress Enter to continue...")
+		reader.ReadString('\n')
+
+	}
 }
