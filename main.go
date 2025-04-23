@@ -62,45 +62,6 @@ func dbConnectInteractive() *sql.DB {
 	return db
 }
 
-//func readCities(db *sql.DB) {
-//	fmt.Println("===== Cities =====")
-//	rows, err := db.Query("SELECT ID, Name, CountryCode, Population FROM city")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer rows.Close()
-//
-//	for rows.Next() {
-//		var id int
-//		var name, code string
-//		var population int
-//		err := rows.Scan(&id, &name, &code, &population)
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		fmt.Printf("%d | %-20s | %s | %d\n", id, name, code, population)
-//	}
-//}
-
-//func readCountries(db *sql.DB) {
-//	fmt.Println("\n===== Countries =====")
-//	rows, err := db.Query("SELECT Code, Name, Continent, Population FROM country")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer rows.Close()
-//
-//	for rows.Next() {
-//		var code, name, continent string
-//		var population int
-//		err := rows.Scan(&code, &name, &continent, &population)
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		fmt.Printf("%s | %-30s | %-10s | %d\n", code, name, continent, population)
-//	}
-//}
-
 func createDatabase(db *sql.DB) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the name of the database to create: ")
@@ -517,7 +478,6 @@ func main() {
 					fmt.Println("Invalid table number.")
 					break
 				}
-
 				tableName := tables[index-1]
 				readTableByName(db, tableName)
 			}
