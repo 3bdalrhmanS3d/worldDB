@@ -398,16 +398,21 @@ func selectQueryManual(db *sql.DB) {
 	printRows("Query Result", columns, rows)
 }
 
-// INSERT INTO city (Name, CountryCode, District, Population) VALUES ('NewCity', 'USA', 'TestState', 12345);
+// INSERT INTO city (Name, CountryCode, District, Population) VALUES ('NewCityCity', 'USA', 'TestState', 123455);
 func insertQueryManual(db *sql.DB) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter INSERT query: ")
 	query, _ := reader.ReadString('\n')
 	query = strings.TrimSpace(query)
 
+	if !strings.HasPrefix(strings.ToUpper(query), "INSERT INTO") {
+		fmt.Println("Error: The query must start with 'INSERT INTO'.")
+		return
+	}
+
 	result, err := db.Exec(query)
 	if err != nil {
-		fmt.Println("Error executing INSERT:", err)
+		fmt.Printf("Error executing INSERT: %v\n", err)
 		return
 	}
 
@@ -444,6 +449,7 @@ func showDatabases(db *sql.DB) ([]string, error) {
 }
 
 func main() {
+
 	db := dbConnectInteractive()
 	defer db.Close()
 
@@ -497,9 +503,22 @@ func main() {
 			if currentDatabase == "" {
 				dropDatabase(db)
 			} else {
-				fmt.Print("Enter table name: ")
-				tableName, _ := reader.ReadString('\n')
-				tableName = strings.TrimSpace(tableName)
+				tables := listTables(db)
+				if len(tables) == 0 {
+					fmt.Println("No tables found.")
+					return
+				}
+
+				fmt.Print("Enter the number of the table to read: ")
+				input, _ := reader.ReadString('\n')
+				input = strings.TrimSpace(input)
+				index, err := strconv.Atoi(input)
+				if err != nil || index < 1 || index > len(tables) {
+					fmt.Println("Invalid table number.")
+					break
+				}
+
+				tableName := tables[index-1]
 				readTableByName(db, tableName)
 			}
 		case 3:
